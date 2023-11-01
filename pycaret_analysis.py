@@ -3,9 +3,16 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+import pickle
+import tempfile
 
 def convert_df(df):
    return df.to_csv(index=False).encode('shift-jis')
+
+st.cache_resource()
+def select_model(ml_model,):
+    model = create_model(ml_model)  # モデルを作成
+    return model
 
 st.markdown("# AutoML Tool")
 
@@ -20,7 +27,6 @@ if uploaded_new_file is not None:
 
     st.markdown("#### 2. 目的変数を入力してください")
     st.markdown("##### 目的変数以外の変数で推定を実施します")
-    #target = st.text_input(label='ターゲット名を文字列で正しく入力してください', value=df.columns[-1])
     target = st.selectbox(label='目的変数を指定してください', options=df_new.keys())
 
     st.markdown("### 3. 分析手法を選択ください")
@@ -68,19 +74,21 @@ if uploaded_new_file is not None:
             st.text('選択されていません')  
 
         if (ml_model != ''):
+            if 'select_model_flg' not in st.session_state:
+                st.session_state["select_model_flg"] = 0
 
-            model = create_model(ml_model)
-            temp = save_model(model, 'saved_model_'+datetime.date.today().strftime('%Y%m%d'))
+            #if st.session_state["select_model_flg"] == 0:
+            model = select_model(ml_model)
             
             # Plots
             plot_model(model, plot='residuals', display_format='streamlit')
             plot_model(model, plot='feature', display_format='streamlit')
             plot_model(model, plot='error', display_format='streamlit')
+            
+            st.markdown("#### モデルのFineTuneが完了しました")
+            st.session_state["select_model_flg"] = 1
 
-            # Predicts label on the holdout set.
             pred_holdout = predict_model(model)
-            #st.write('#### Predictions from holdout set')
-
             st.markdown("#### 推定結果がprediction_labelに出力されます")
             
             st.dataframe(pred_holdout, height=200)
@@ -92,8 +100,20 @@ if uploaded_new_file is not None:
             "text/csv",
             key='download-csv'
             )
+
+            # 一時的なファイルを作成してモデルを保存
+            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                pickle.dump(model, temp_file, protocol=4)
+                temp_file_path = temp_file.name
+
+            # モデルのダウンロード
+            with open(temp_file_path, 'rb') as file:
+                model_binary = file.read()
+
             st.download_button(
-                "Download Model",
-                data=pickle.dumps(model),
-                file_name="model.pkl",
-            )
+            label="Download Model",
+            data=open(temp_file_path, "rb").read(),
+            file_name="model.pkl",
+            key="download-model-button",
+            help="Click to download the trained model.",
+        )
